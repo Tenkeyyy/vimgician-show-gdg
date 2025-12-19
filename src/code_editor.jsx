@@ -21,17 +21,21 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
       };
     });
   }
-
-function CodeEditor(){
+  
+  function CodeEditor(){
+    const [activeFile, setActiveFile] = useState('/file.ts');
     const viewRef = useRef(null);
     const versionRef = useRef(0);
+    const activeFileRef = useRef(activeFile);
+    const fileVersionsRef = useRef({});
+    const selectionRef = useRef({});
+    const [pendingDefPos, setPendingDefPos] = useState(null);
     const [useVim, setVim] = useState(false) ;
     const [code, setCode] = useState(`function hello(name){
-        console.log("Hello " + name);
-    }
-    hello("World"); `);
-    const DEFAULT_LIB_FILE = 'lib.d.ts';
-
+      console.log("Hello " + name);
+      }
+      hello("World"); `);
+    const DEFAULT_LIB_FILE = 'lib.d.ts';  
     const DEFAULT_LIB = `
       declare var console: {
         log: (...args: any[]) => void;
@@ -66,35 +70,57 @@ function CodeEditor(){
       interface Boolean {}
       interface Object {}
       interface Function {}
-        `;
+      `;
+      const filesRef = useRef({ '/file.ts': code , '/lib.d.ts': DEFAULT_LIB, '/main.ts': `import { hello } from './utils'; hello();`, '/utils.ts': `export function hello() {}`, });
+      const fileList = Object.keys(filesRef.current).filter(f => f !== 'lib.d.ts');
+      const setActiveFileSafe = (file) => {
+        activeFileRef.current = file;
+        setActiveFile(file);
+      };
+      const goToDefinition = () => {
+        const view = viewRef.current;
+        if (!view || !tsServiceRef.current) return;
+        const file = activeFileRef.current;
+        console.log("Active file:", file);
+        const pos = view.state.selection.main.head;
+        const defs = tsServiceRef.current.getDefinitionAtPosition(
+          file,
+          pos
+        );
+          console.log("Active file:", activeFile);
+          console.log("Editor doc length:", viewRef.current.state.doc.length);
+          console.log("Cursor pos:", viewRef.current.state.selection.main.head);
+          console.log("Current doc preview:", viewRef.current.state.doc.sliceString(0, 100));
 
 
-        const goToDefinition = () => {
-          const view = viewRef.current;
-          if (!view || !tsServiceRef.current) return;
-
-          const pos = view.state.selection.main.head;
-
-          const defs = tsServiceRef.current.getDefinitionAtPosition(
-            'file.ts',
-            pos
-          );
 
           if (!defs || defs.length === 0) return;
 
           const def = defs[0];
 
-          view.dispatch({
-            selection: { anchor: def.textSpan.start },
-            scrollIntoView: true,
-          });
-        };
+            if (def.fileName !== file) {
+              console.log("xd");
+              setActiveFileSafe(def.fileName);
+              setPendingDefPos(def.textSpan.start);
+            } else {
+              console.log("xd");
+                view.dispatch({
+                  selection: { anchor: def.textSpan.start },
+                  scrollIntoView: true,
+                });
+              }
+            };
+
+            useEffect(() => {
+              for (const f of Object.keys(filesRef.current)) {
+                fileVersionsRef.current[f] ??= 0;
+              }
+            }, []); 
 
 
     const updateVim = () => {
         setVim(!useVim);
     }
-    const filesRef = useRef({ 'file.ts': code , 'lib.d.ts': DEFAULT_LIB, });
     const tsServiceRef = useRef(null);
     const tsLinter = linter(() => {
       if (!tsServiceRef.current) return [];
@@ -119,17 +145,20 @@ function CodeEditor(){
         { context: 'normal' }
       );
     const host = {
-        getScriptFileNames: () => [
-        'lib.d.ts',
-        'file.ts',
-        ],
-        getScriptVersion: () => versionRef.current.toString(),
+        getScriptFileNames: () => Object.keys(filesRef.current),
+        getScriptVersion: (fileName) => String(fileVersionsRef.current[fileName] ?? 0),
         getScriptSnapshot: (fileName) => {
             const text = filesRef.current[fileName];
             return text ? ts.ScriptSnapshot.fromString(text) : undefined;
         },
         getCurrentDirectory: () => '/',
-        getCompilationSettings: () => ({ allowJs: true, checkJs: true, target: ts.ScriptTarget.ESNext, }),
+        getCompilationSettings: () => ({ allowJs: true, 
+                                         checkJs: true, 
+                                         target: ts.ScriptTarget.ESNext, 
+                                         moduleResolution: ts.ModuleResolutionKind.NodeNext, 
+                                         module: ts.ModuleKind.NodeNext, 
+                                         allowImportingTsExtensions: true, 
+                                         noEmit: true, }),
         getDefaultLibFileName: () => DEFAULT_LIB_FILE,
         fileExists: (fileName) =>  fileName in filesRef.current,
         readFile: (fileName) => filesRef.current[fileName],
@@ -139,8 +168,12 @@ function CodeEditor(){
   }, []);
     const handleChange = (value, viewUpdate) => {
     setCode(value);
-    filesRef.current['file.ts'] = value;
+    filesRef.current[activeFile] = value;
+    fileVersionsRef.current[activeFile]++;
     versionRef.current++ ;
+
+    const pos = viewUpdate.state.selection.main.head;
+     selectionRef.current[activeFile] = pos;
 
     const program = tsServiceRef.current.getProgram();
     if (program) {
@@ -148,34 +181,59 @@ function CodeEditor(){
       console.log('Diagnostics:', diagnostics.map(d => d.messageText.toString()));
     }
     const offset = value.length;
-    const hover = tsServiceRef.current.getQuickInfoAtPosition('file.ts', offset);
+    const hover = tsServiceRef.current.getQuickInfoAtPosition(activeFile, offset);
     if (hover) console.log('Hover:', ts.displayPartsToString(hover.displayParts));
-    const defs = tsServiceRef.current.getDefinitionAtPosition('file.ts', offset);
+    const defs = tsServiceRef.current.getDefinitionAtPosition(activeFile, offset);
     if (defs) console.log('Definitions:', defs);
 };
 
 
     return (
-    <div>
-          <button className={styles.button} onClick={updateVim}>
-            setVim: {useVim ? 'ON' : 'OFF'}
-            </button>
-      <CodeMirror
-        value={code}
-        height="300px"
-        extensions={[
-          javascript(),
-          useVim && vim(),
-          tsLinter,
-        ].filter(Boolean)}
-        theme={oneDark}
-        onChange={handleChange}
-        onCreateEditor={(view) => {
-          viewRef.current = view;
-        }}
-      />
+  <div>
+    <div style={{ marginBottom: '8px' }}>
+      {fileList.map(file => (
+          <button
+            key={file}
+            onClick={() => {
+              setActiveFileSafe(file);
+              fileVersionsRef.current[file]++;
+            }}
+            style={{
+              marginRight: '6px',
+              fontWeight: file === activeFile ? 'bold' : 'normal'
+            }}
+          >
+            {file}
+  </button>
+        ))}
     </div>
-)
+    <button className={styles.button} onClick={updateVim}>
+      Vim: {useVim ? 'ON' : 'OFF'}
+    </button>
+    <CodeMirror
+      key={activeFile} 
+      value={filesRef.current[activeFile]}
+      height="300px"
+      extensions={[
+        javascript(),
+        useVim && vim(),
+        tsLinter,
+      ].filter(Boolean)}
+      theme={oneDark}
+      onChange={handleChange}
+      onCreateEditor={(view) => {
+        viewRef.current = view;
+        if (pendingDefPos !== null) {
+          view.dispatch({
+            selection: { anchor: pendingDefPos },
+            scrollIntoView: true,
+          });
+          setPendingDefPos(null);
+        }
+  }}
+    />
+  </div>
+);
 }
 
 
