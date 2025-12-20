@@ -72,7 +72,7 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
       interface Function {}
       `;
       const filesRef = useRef({ '/file.ts': code , '/lib.d.ts': DEFAULT_LIB, '/main.ts': `import { hello } from './utils'; hello();`, '/utils.ts': `export function hello() {}`, });
-      const fileList = Object.keys(filesRef.current).filter(f => f !== 'lib.d.ts');
+      const fileList = Object.keys(filesRef.current).filter(f => f !== '/lib.d.ts');
       const setActiveFileSafe = (file) => {
         activeFileRef.current = file;
         setActiveFile(file);
@@ -90,23 +90,23 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
 
           const def = defs[0];
 
-            if (def.fileName !== file) {
+            if (def.fileName !== file){
               setActiveFileSafe(def.fileName);
               setPendingDefPos(def.textSpan.start);
-            } else {
+            } 
+            else{
                 view.dispatch({
                   selection: { anchor: def.textSpan.start },
                   scrollIntoView: true,
                 });
               }
-            };
+        };
 
             useEffect(() => {
               for (const f of Object.keys(filesRef.current)) {
                 fileVersionsRef.current[f] ??= 0;
               }
             }, []); 
-
 
     const updateVim = () => {
         setVim(!useVim);
@@ -164,14 +164,6 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
 
     const pos = viewUpdate.state.selection.main.head;
      selectionRef.current[activeFile] = pos;
-
-    const program = tsServiceRef.current.getProgram();
-    if (program) {
-      const diagnostics = ts.getPreEmitDiagnostics(program);
-    }
-    const offset = value.length;
-    const hover = tsServiceRef.current.getQuickInfoAtPosition(activeFile, offset);
-    const defs = tsServiceRef.current.getDefinitionAtPosition(activeFile, offset);
 };
 
 
