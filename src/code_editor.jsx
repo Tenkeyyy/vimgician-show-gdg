@@ -81,29 +81,19 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
         const view = viewRef.current;
         if (!view || !tsServiceRef.current) return;
         const file = activeFileRef.current;
-        console.log("Active file:", file);
         const pos = view.state.selection.main.head;
         const defs = tsServiceRef.current.getDefinitionAtPosition(
           file,
           pos
         );
-          console.log("Active file:", activeFile);
-          console.log("Editor doc length:", viewRef.current.state.doc.length);
-          console.log("Cursor pos:", viewRef.current.state.selection.main.head);
-          console.log("Current doc preview:", viewRef.current.state.doc.sliceString(0, 100));
-
-
-
           if (!defs || defs.length === 0) return;
 
           const def = defs[0];
 
             if (def.fileName !== file) {
-              console.log("xd");
               setActiveFileSafe(def.fileName);
               setPendingDefPos(def.textSpan.start);
             } else {
-              console.log("xd");
                 view.dispatch({
                   selection: { anchor: def.textSpan.start },
                   scrollIntoView: true,
@@ -178,13 +168,10 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
     const program = tsServiceRef.current.getProgram();
     if (program) {
       const diagnostics = ts.getPreEmitDiagnostics(program);
-      console.log('Diagnostics:', diagnostics.map(d => d.messageText.toString()));
     }
     const offset = value.length;
     const hover = tsServiceRef.current.getQuickInfoAtPosition(activeFile, offset);
-    if (hover) console.log('Hover:', ts.displayPartsToString(hover.displayParts));
     const defs = tsServiceRef.current.getDefinitionAtPosition(activeFile, offset);
-    if (defs) console.log('Definitions:', defs);
 };
 
 
