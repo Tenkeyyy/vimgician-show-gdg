@@ -23,14 +23,6 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
   }
   
   function CodeEditor(){
-    const [activeFile, setActiveFile] = useState('/file.ts');
-    const viewRef = useRef(null);
-    const versionRef = useRef(0);
-    const activeFileRef = useRef(activeFile);
-    const fileVersionsRef = useRef({});
-    const selectionRef = useRef({});
-    const [pendingDefPos, setPendingDefPos] = useState(null);
-    const [useVim, setVim] = useState(false) ;
     const [code, setCode] = useState(`function hello(name){
       console.log("Hello " + name);
       }
@@ -71,37 +63,50 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
       interface Object {}
       interface Function {}
       `;
+      const [activeFile, setActiveFile] = useState('/file.ts');
+      const viewRef = useRef(null);
+      const versionRef = useRef(0);
+      const activeFileRef = useRef(activeFile);
+      const fileVersionsRef = useRef({});
+      const selectionRef = useRef({});
+      const [pendingDefPos, setPendingDefPos] = useState(null);
+      const [useVim, setVim] = useState(false) ;
       const filesRef = useRef({ '/file.ts': code , '/lib.d.ts': DEFAULT_LIB, '/main.ts': `import { hello } from './utils'; hello();`, '/utils.ts': `export function hello() {}`, });
       const fileList = Object.keys(filesRef.current).filter(f => f !== '/lib.d.ts');
+      const jumpStackRef = useRef([]);
+      const jumpIndexRef = useRef(-1);
       const setActiveFileSafe = (file) => {
         activeFileRef.current = file;
         setActiveFile(file);
       };
+      const jumpBack = () => {
+        if (jumpIndexRef.current < 0) return ;
+
+        const jump = jumpStackRef.current[jumpIndexRef.current];
+        jumpIndexRef.current--;
+
+        navigateTo(jump.file, jump.pos, false);
+      }
       const goToDefinition = () => {
         const view = viewRef.current;
         if (!view || !tsServiceRef.current) return;
+
+
         const file = activeFileRef.current;
         const pos = view.state.selection.main.head;
+
+
         const defs = tsServiceRef.current.getDefinitionAtPosition(
           file,
           pos
         );
           if (!defs || defs.length === 0) return;
 
+
           const def = defs[0];
-
-            if (def.fileName !== file){
-              setActiveFileSafe(def.fileName);
-              setPendingDefPos(def.textSpan.start);
-            } 
-            else{
-                view.dispatch({
-                  selection: { anchor: def.textSpan.start },
-                  scrollIntoView: true,
-                });
-              }
+          navigateTo(def.fileName, def.textSpan.start, true );
         };
-
+        
             useEffect(() => {
               for (const f of Object.keys(filesRef.current)) {
                 fileVersionsRef.current[f] ??= 0;
@@ -123,17 +128,25 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
       return tsDiagnosticsToCmDiagnostics(diagnostics);
     });
     useEffect(() => {
-        Vim.defineAction('goToDefinition', () => {
-        goToDefinition();
-      });
+      Vim.defineAction('goToDefinition', goToDefinition);
+      Vim.defineAction('jumpBack' , jumpBack);
 
       Vim.mapCommand(
         'gd',
         'action',
         'goToDefinition',
         {},
-        { context: 'normal' }
+        { context: 'normal' },
       );
+
+      Vim.mapCommand(
+        '<C-o>',
+        'action',
+        'jumpBack',
+        {},
+        { context : 'normal'},
+      )
+
     const host = {
         getScriptFileNames: () => Object.keys(filesRef.current),
         getScriptVersion: (fileName) => String(fileVersionsRef.current[fileName] ?? 0),
@@ -165,6 +178,32 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
     const pos = viewUpdate.state.selection.main.head;
      selectionRef.current[activeFile] = pos;
 };
+    function navigateTo(targetFile, targetPos, push = true) {
+      const view = viewRef.current;
+      if (!view) return;
+
+      const fromFile = activeFileRef.current;
+      const fromPos = view.state.selection.main.head;
+
+      if (push) {
+        jumpStackRef.current = jumpStackRef.current.slice(
+          0,
+          jumpIndexRef.current + 1
+        );
+        jumpStackRef.current.push({ file: fromFile, pos: fromPos });
+        jumpIndexRef.current++;
+      }
+
+      if (targetFile !== fromFile) {
+        setActiveFileSafe(targetFile);
+        setPendingDefPos(targetPos);
+      } else {
+        view.dispatch({
+          selection: { anchor: targetPos },
+          scrollIntoView: true,
+        });
+      }
+    }
 
 
     return (
