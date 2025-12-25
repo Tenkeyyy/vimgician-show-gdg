@@ -75,18 +75,47 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
       const fileList = Object.keys(filesRef.current).filter(f => f !== '/lib.d.ts');
       const jumpStackRef = useRef([]);
       const jumpIndexRef = useRef(-1);
+      const hasSavedCurrentRef = useRef(false);
+      const pendingJumpRef = useRef(null);
       const setActiveFileSafe = (file) => {
         activeFileRef.current = file;
         setActiveFile(file);
       };
       const jumpBack = () => {
+        const view = viewRef.current;
+        if (!view) return;
+        
+        if (!hasSavedCurrentRef.current) {
+          jumpStackRef.current.push({
+            file: activeFileRef.current,
+            pos: view.state.selection.main.head,
+          });
+          jumpIndexRef.current = jumpStackRef.current.length - 1;
+          hasSavedCurrentRef.current = true;
+            }
+            
         if (jumpIndexRef.current < 0) return ;
-
-        const jump = jumpStackRef.current[jumpIndexRef.current];
         jumpIndexRef.current--;
+        const jump = jumpStackRef.current[jumpIndexRef.current];
 
         navigateTo(jump.file, jump.pos, false);
+        console.log({
+        stack: jumpStackRef.current,
+        index: jumpIndexRef.current
+      });
       }
+      const jumpForward = () => {
+        if (jumpIndexRef.current >= jumpStackRef.current.length - 1 ) return ;
+
+        jumpIndexRef.current++;
+        const jump = jumpStackRef.current[jumpIndexRef.current];
+        navigateTo(jump.file, jump.pos , false);
+        console.log({
+        stack: jumpStackRef.current,
+        index: jumpIndexRef.current
+      });
+      };
+
       const goToDefinition = () => {
         const view = viewRef.current;
         if (!view || !tsServiceRef.current) return;
@@ -107,11 +136,11 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
           navigateTo(def.fileName, def.textSpan.start, true );
         };
         
-            useEffect(() => {
-              for (const f of Object.keys(filesRef.current)) {
-                fileVersionsRef.current[f] ??= 0;
-              }
-            }, []); 
+    useEffect(() => {
+      for (const f of Object.keys(filesRef.current)) {
+        fileVersionsRef.current[f] ??= 0;
+      }
+    }, []);
 
     const updateVim = () => {
         setVim(!useVim);
@@ -130,6 +159,7 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
     useEffect(() => {
       Vim.defineAction('goToDefinition', goToDefinition);
       Vim.defineAction('jumpBack' , jumpBack);
+      Vim.defineAction('jumpForward' , jumpForward);
 
       Vim.mapCommand(
         'gd',
@@ -145,7 +175,23 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
         'jumpBack',
         {},
         { context : 'normal'},
-      )
+      );
+
+      Vim.mapCommand(
+        '<C-i>',
+        'action',
+        'jumpForward',
+        {},
+        { context : 'normal' }
+      );
+
+      Vim.mapCommand(
+        '<C-l>',
+        'action',
+        'jumpForward',
+        {},
+        { context : 'normal' }
+      );
 
     const host = {
         getScriptFileNames: () => Object.keys(filesRef.current),
@@ -169,6 +215,8 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
     };
     tsServiceRef.current = ts.createLanguageService(host, ts.createDocumentRegistry());
   }, []);
+
+
     const handleChange = (value, viewUpdate) => {
     setCode(value);
     filesRef.current[activeFile] = value;
@@ -178,12 +226,15 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
     const pos = viewUpdate.state.selection.main.head;
      selectionRef.current[activeFile] = pos;
 };
+
+
     function navigateTo(targetFile, targetPos, push = true) {
       const view = viewRef.current;
-      if (!view) return;
-
       const fromFile = activeFileRef.current;
-      const fromPos = view.state.selection.main.head;
+      const fromPos =
+      selectionRef.current[fromFile] ??
+      view?.state.selection.main.head ??
+      0;
 
       if (push) {
         jumpStackRef.current = jumpStackRef.current.slice(
@@ -191,15 +242,17 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
           jumpIndexRef.current + 1
         );
         jumpStackRef.current.push({ file: fromFile, pos: fromPos });
-        jumpIndexRef.current++;
+        jumpIndexRef.current = jumpStackRef.current.length - 1 ;
+        hasSavedCurrentRef.current = false;
       }
 
       if (targetFile !== fromFile) {
+        pendingJumpRef.current = {file : targetFile , pos : targetPos};
         setActiveFileSafe(targetFile);
-        setPendingDefPos(targetPos);
-      } else {
+      } else if (view) {
+        const safePos = Math.min(targetPos, view.state.doc.length)
         view.dispatch({
-          selection: { anchor: targetPos },
+          selection: { anchor: safePos },
           scrollIntoView: true,
         });
       }
@@ -231,7 +284,7 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
     <CodeMirror
       key={activeFile} 
       value={filesRef.current[activeFile]}
-      height="300px"
+      height="200px"
       extensions={[
         javascript(),
         useVim && vim(),
@@ -239,16 +292,23 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
       ].filter(Boolean)}
       theme={oneDark}
       onChange={handleChange}
+      
       onCreateEditor={(view) => {
         viewRef.current = view;
-        if (pendingDefPos !== null) {
-          view.dispatch({
-            selection: { anchor: pendingDefPos },
-            scrollIntoView: true,
-          });
-          setPendingDefPos(null);
-        }
-  }}
+        const jump = pendingJumpRef.current;
+        if (jump && jump.file === activeFile){
+            const safePos = Math.min(jump.pos, view.state.doc.length);
+
+            view.dispatch({
+              selection: { anchor: safePos },
+              scrollIntoView: true,
+            });
+
+            view.focus();
+            pendingJumpRef.current = null;
+          };
+        view.focus();
+      }}
     />
   </div>
 );
