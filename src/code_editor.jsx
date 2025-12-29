@@ -96,13 +96,8 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
             
         if (jumpIndexRef.current < 0) return ;
         jumpIndexRef.current--;
-        const jump = jumpStackRef.current[jumpIndexRef.current];
-
+        const jump =      jumpStackRef.current[jumpIndexRef.current];
         navigateTo(jump.file, jump.pos, false);
-        console.log({
-        stack: jumpStackRef.current,
-        index: jumpIndexRef.current
-      });
       }
       const jumpForward = () => {
         if (jumpIndexRef.current >= jumpStackRef.current.length - 1 ) return ;
@@ -110,10 +105,6 @@ function tsDiagnosticsToCmDiagnostics(tsDiagnostics) {
         jumpIndexRef.current++;
         const jump = jumpStackRef.current[jumpIndexRef.current];
         navigateTo(jump.file, jump.pos , false);
-        console.log({
-        stack: jumpStackRef.current,
-        index: jumpIndexRef.current
-      });
       };
 
       const goToDefinition = () => {
