@@ -8,7 +8,7 @@ without any backend or LSP server.
 
 - 📝 CodeMirror 6 editor
 - ⌨️ Full Vim mode
-- 🔍 Go-to-definition (`gd`)
+- 🔍 Go-to-definition (`gd`) , JumpBack (`Ctrl-o`) , JumpForward (`Ctrl-l`)
 - ⚠️ Real-time diagnostics
 - 🧠 Client-side TypeScript intelligence
 - 🗂️ Virtual in-memory file system
