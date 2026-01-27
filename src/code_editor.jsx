@@ -108,6 +108,16 @@ function CodeEditor() {
 		const jump = jumpStackRef.current[jumpIndexRef.current];
 		navigateTo(jump.file, jump.pos, false);
 	};
+	const firstline = () => {
+		const view = viewRef.current;
+		if (!view) return;
+		navigateTo(activeFileRef.current, 0, true);
+	};
+	const lastline = () => {
+		const view = viewRef.current;
+		if (!view) return;
+		navigateTo(activeFileRef.current, Number.MAX_SAFE_INTEGER, true);
+	};
 
 	const goToDefinition = () => {
 		const view = viewRef.current;
@@ -148,11 +158,30 @@ function CodeEditor() {
 		Vim.defineAction('goToDefinition', goToDefinition);
 		Vim.defineAction('jumpBack', jumpBack);
 		Vim.defineAction('jumpForward', jumpForward);
+		Vim.defineAction('firstline', firstline);
+		Vim.defineAction('lastline', lastline);
+
 
 		Vim.mapCommand(
 			'gd',
 			'action',
 			'goToDefinition',
+			{},
+			{ context: 'normal' },
+		);
+
+		Vim.mapCommand(
+			'G',
+			'action',
+			'lastline',
+			{},
+			{ context: 'normal' },
+		);
+
+		Vim.mapCommand(
+			'gg',
+			'action',
+			'firstline',
 			{},
 			{ context: 'normal' },
 		);
