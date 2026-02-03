@@ -1,6 +1,6 @@
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
-import { vim, Vim } from '@replit/codemirror-vim';
+import { vim, Vim, getCM } from '@replit/codemirror-vim';
 import React, { useState, useRef, useEffect } from 'react';
 import { oneDark } from '@codemirror/theme-one-dark';
 import styles from './Button.module.css';
@@ -29,32 +29,32 @@ function CodeEditor() {
 	const DEFAULT_LIB_FILE = 'lib.d.ts';
 	const DEFAULT_LIB = `
       declare var console: {
-        log: (...args: any[]) => void;
+	log: (...args: any[]) => void;
       };
 
       declare class RegExp {
-        constructor(pattern: string | RegExp, flags?: string);
-        exec(string: string): RegExpExecArray | null;
-        test(string: string): boolean;
+	constructor(pattern: string | RegExp, flags?: string);
+	exec(string: string): RegExpExecArray | null;
+	test(string: string): boolean;
       }
 
       interface RegExpExecArray extends Array<string> {
-        index: number;
-        input: string;
+	index: number;
+	input: string;
       }
 
       interface IArguments {
-        length: number;
-        callee: Function;
-        [index: number]: any;
+	length: number;
+	callee: Function;
+	[index: number]: any;
       }
 
       interface Array<T> {
-        length: number;
+	length: number;
       }
 
       interface String {
-        length: number;
+	length: number;
       }
 
       interface Number {}
@@ -77,63 +77,50 @@ function CodeEditor() {
 		'/utils.ts': `export function hello() {}`,
 	});
 	const fileList = Object.keys(filesRef.current).filter(f => f !== '/lib.d.ts');
-	const jumpStackRef = useRef([]);
-	const jumpIndexRef = useRef(-1);
-	const hasSavedCurrentRef = useRef(false);
 	const pendingJumpRef = useRef(null);
+	useEffect(() => {
+		const view = viewRef.current;
+		const jump = pendingJumpRef.current;
+
+		if (view && jump && jump.file === activeFile) {
+			console.log('Applying pending jump via useEffect:', jump);
+			console.log('Document length:', view.state.doc.length);
+
+			const safePos = Math.min(jump.pos, view.state.doc.length);
+
+			view.dispatch({
+				selection: { anchor: safePos },
+				scrollIntoView: true,
+			});
+
+			view.focus();
+			pendingJumpRef.current = null;
+		}
+	}, [activeFile]);
 	const setActiveFileSafe = (file) => {
 		activeFileRef.current = file;
 		setActiveFile(file);
 	};
-	const jumpBack = () => {
+	function navigateTo(targetFile, targetPos) {
+		console.log('navigateTo called:', { targetFile, targetPos });
 		const view = viewRef.current;
-		if (!view) return;
-		if (!hasSavedCurrentRef.current) {
-			jumpStackRef.current.push({
-				file: activeFileRef.current,
-				pos: view.state.selection.main.head,
+		const fromFile = activeFileRef.current;
+		if (targetFile !== fromFile) {
+			pendingJumpRef.current = {
+				file: targetFile,
+				pos: targetPos,
+			};
+			console.log('Setting pending jump:', pendingJumpRef.current);
+			setActiveFileSafe(targetFile);
+		} else if (view) {
+			const safePos = Math.min(targetPos, view.state.doc.length);
+			console.log('Same file, moving to:', safePos);
+			view.dispatch({
+				selection: { anchor: safePos },
+				scrollIntoView: true,
 			});
-			jumpIndexRef.current = jumpStackRef.current.length - 1;
-			hasSavedCurrentRef.current = true;
 		}
-		if (jumpIndexRef.current < 0) return;
-		jumpIndexRef.current--;
-		const jump = jumpStackRef.current[jumpIndexRef.current];
-		navigateTo(jump.file, jump.pos, false);
 	}
-	const jumpForward = () => {
-		if (jumpIndexRef.current >= jumpStackRef.current.length - 1) return;
-
-		jumpIndexRef.current++;
-		const jump = jumpStackRef.current[jumpIndexRef.current];
-		navigateTo(jump.file, jump.pos, false);
-	};
-	const firstline = () => {
-		const view = viewRef.current;
-		if (!view) return;
-		navigateTo(activeFileRef.current, 0, true);
-	};
-	const lastline = () => {
-		const view = viewRef.current;
-		if (!view) return;
-		navigateTo(activeFileRef.current, Number.MAX_SAFE_INTEGER, true);
-	};
-
-	const goToDefinition = () => {
-		const view = viewRef.current;
-		if (!view || !tsServiceRef.current) return;
-
-		const file = activeFileRef.current;
-		const pos = view.state.selection.main.head;
-
-		const defs = tsServiceRef.current.getDefinitionAtPosition(
-			file,
-			pos
-		);
-		if (!defs || defs.length === 0) return;
-		const def = defs[0];
-		navigateTo(def.fileName, def.textSpan.start, true);
-	};
 	useEffect(() => {
 		for (const f of Object.keys(filesRef.current)) {
 			fileVersionsRef.current[f] ??= 0;
@@ -155,57 +142,36 @@ function CodeEditor() {
 		return tsDiagnosticsToCmDiagnostics(diagnostics);
 	});
 	useEffect(() => {
-		Vim.defineAction('goToDefinition', goToDefinition);
-		Vim.defineAction('jumpBack', jumpBack);
-		Vim.defineAction('jumpForward', jumpForward);
-		Vim.defineAction('firstline', firstline);
-		Vim.defineAction('lastline', lastline);
+		const goToDefinition = () => {
+			const view = viewRef.current;
+			if (!view || !tsServiceRef.current) return;
 
+			const file = activeFileRef.current;
+			const pos = view.state.selection.main.head;
+
+			const defs = tsServiceRef.current.getDefinitionAtPosition(file, pos);
+			if (!defs || defs.length === 0) return;
+
+			const def = defs[0];
+
+			if (useVim) {
+				const cm = getCM(view);
+				if (cm) {
+					console.log("[ ]");
+					Vim.handleKey(cm, 'm');
+					Vim.handleKey(cm, '\'');
+				}
+			}
+
+			navigateTo(def.fileName, def.textSpan.start);
+		};
+
+		Vim.defineAction('goToDefinition', goToDefinition);
 
 		Vim.mapCommand(
 			'gd',
 			'action',
 			'goToDefinition',
-			{},
-			{ context: 'normal' },
-		);
-
-		Vim.mapCommand(
-			'G',
-			'action',
-			'lastline',
-			{},
-			{ context: 'normal' },
-		);
-
-		Vim.mapCommand(
-			'gg',
-			'action',
-			'firstline',
-			{},
-			{ context: 'normal' },
-		);
-
-		Vim.mapCommand(
-			'<C-o>',
-			'action',
-			'jumpBack',
-			{},
-			{ context: 'normal' },
-		);
-
-		Vim.mapCommand(
-			'<C-i>',
-			'action',
-			'jumpForward',
-			{},
-			{ context: 'normal' }
-		);
-
-		Vim.mapCommand(
-			'<C-l>',
-			'action',
-			'jumpForward',
 			{},
 			{ context: 'normal' }
 		);
@@ -244,35 +210,6 @@ function CodeEditor() {
 		selectionRef.current[activeFile] = pos;
 	};
 
-	function navigateTo(targetFile, targetPos, push = true) {
-		const view = viewRef.current;
-		const fromFile = activeFileRef.current;
-		const fromPos =
-			selectionRef.current[fromFile] ??
-			view?.state.selection.main.head ??
-			0;
-
-		if (push) {
-			jumpStackRef.current = jumpStackRef.current.slice(
-				0,
-				jumpIndexRef.current + 1
-			);
-			jumpStackRef.current.push({ file: fromFile, pos: fromPos });
-			jumpIndexRef.current = jumpStackRef.current.length - 1;
-			hasSavedCurrentRef.current = false;
-		}
-
-		if (targetFile !== fromFile) {
-			pendingJumpRef.current = { file: targetFile, pos: targetPos };
-			setActiveFileSafe(targetFile);
-		} else if (view) {
-			const safePos = Math.min(targetPos, view.state.doc.length)
-			view.dispatch({
-				selection: { anchor: safePos },
-				scrollIntoView: true,
-			});
-		}
-	}
 
 	return (
 		<div>
@@ -297,7 +234,6 @@ function CodeEditor() {
 				Vim: {useVim ? 'ON' : 'OFF'}
 			</button>
 			<CodeMirror
-				key={activeFile}
 				value={filesRef.current[activeFile]}
 				height="200px"
 				extensions={[
@@ -309,6 +245,7 @@ function CodeEditor() {
 				onChange={handleChange}
 				onCreateEditor={(view) => {
 					viewRef.current = view;
+
 					const jump = pendingJumpRef.current;
 					if (jump && jump.file === activeFile) {
 						const safePos = Math.min(jump.pos, view.state.doc.length);
@@ -320,7 +257,7 @@ function CodeEditor() {
 
 						view.focus();
 						pendingJumpRef.current = null;
-					};
+					}
 					view.focus();
 				}}
 			/>
