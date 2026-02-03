@@ -155,22 +155,21 @@ function CodeEditor() {
 			const def = defs[0];
 
 			if (useVim) {
-				const cm = getCM(view);
-				if (cm) {
-					console.log("[ ]");
-					Vim.handleKey(cm, 'm');
-					Vim.handleKey(cm, '\'');
-				}
-			}
+      const globalState = Vim.getVimGlobalState_();
+      const cm = getCM(view);
+      const currentCursor = cm.posFromIndex(pos);
+      const targetCursor = cm.posFromIndex(def.textSpan.start);
+      globalState.jumpList.add(cm , currentCursor , targetCursor );
+  }
 
 			navigateTo(def.fileName, def.textSpan.start);
 		};
 
-		Vim.defineAction('goToDefinition', goToDefinition);
+		Vim.defineMotion('goToDefinition', goToDefinition);
 
 		Vim.mapCommand(
 			'gd',
-			'action',
+			'motion',
 			'goToDefinition',
 			{},
 			{ context: 'normal' }
