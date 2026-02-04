@@ -64,6 +64,7 @@ function CodeEditor() {
       `;
 	const [activeFile, setActiveFile] = useState('/file.ts');
 	const viewRef = useRef(null);
+	const fileJumpStackRef = useRef([]); // ADD THIS LINE
 	const versionRef = useRef(0);
 	const activeFileRef = useRef(activeFile);
 	const fileVersionsRef = useRef({});
@@ -155,17 +156,51 @@ function CodeEditor() {
 			const def = defs[0];
 
 			if (useVim) {
-      const globalState = Vim.getVimGlobalState_();
-      const cm = getCM(view);
-      const currentCursor = cm.posFromIndex(pos);
-      const targetCursor = cm.posFromIndex(def.textSpan.start);
-      globalState.jumpList.add(cm , currentCursor , targetCursor );
-  }
+				const globalState = Vim.getVimGlobalState_();
+				const cm = getCM(view);
+				const currentCursor = cm.posFromIndex(pos);
+				const targetCursor = cm.posFromIndex(def.textSpan.start);
+				globalState.jumpList.add(cm, currentCursor, targetCursor);
+				fileJumpStackRef.current.push({
+					file: file,
+					cursor: currentCursor,
+				});
+			}
 
 			navigateTo(def.fileName, def.textSpan.start);
 		};
 
 		Vim.defineMotion('goToDefinition', goToDefinition);
+
+		const jumpListWalkWithFiles = () => {
+			const view = viewRef.current;
+			if (!view) return;
+			const globalState = Vim.getVimGlobalState_();
+			console.log("hi1");
+			if (!globalState?.jumpList) return;
+			console.log("hi2");
+			const cm = getCM(view);
+			if (!cm) return;
+
+			globalState.jumpList.move(cm, -1);
+
+			if (fileJumpStackRef.current.length > 0) {
+				const filejump = fileJumpStackRef.current.pop();
+				console.log("filejump : ", filejump);
+				if (filejump.file !== activeFileRef.current) {
+					pendingJumpRef.current = {
+						file: filejump.file,
+						pos: filejump.pos,
+					};
+					setActiveFileSafe(filejump.file);
+
+				}
+
+			}
+
+		}
+
+		Vim.defineMotion('jumpListWithFiles', jumpListWalkWithFiles);
 
 		Vim.mapCommand(
 			'gd',
@@ -173,6 +208,14 @@ function CodeEditor() {
 			'goToDefinition',
 			{},
 			{ context: 'normal' }
+		);
+
+		Vim.mapCommand(
+			'<C-o>',
+			'motion',
+			'jumpListWalkWithFiles',
+			{ forward: false },
+			{ context: 'normal' },
 		);
 
 		const host = {
